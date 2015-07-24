@@ -28,6 +28,7 @@ import org.apache.commons.lang.StringUtils;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+import com.amazonaws.ClientConfiguration;
 import com.amazonaws.auth.AWSCredentialsProvider;
 import com.amazonaws.auth.DefaultAWSCredentialsProviderChain;
 
@@ -86,6 +87,17 @@ public class BasicSimianArmyContext implements Monkey.Context {
 
     private final String region;
 
+    private ClientConfiguration awsClientConfig = new ClientConfiguration();
+
+    /* If configured, the proxy to be used when making AWS API requests */
+    private final String proxyHost;
+
+    private final String proxyPort;
+
+    private final String proxyUsernaem;
+
+    private final String proxyPassword;
+
     /** protected constructor as the Shell is meant to be subclassed. */
     protected BasicSimianArmyContext(String... configFiles) {
         eventReport = new LinkedList<Event>();
@@ -95,7 +107,12 @@ public class BasicSimianArmyContext implements Monkey.Context {
         }
         LOGGER.info("The following are properties in the context.");
         for (Entry<Object, Object> prop : properties.entrySet()) {
-            LOGGER.info(String.format("%s = %s", prop.getKey(), prop.getValue()));
+            Object propertyKey = prop.getKey();
+            if (isSafeToLog(propertyKey)) {
+                LOGGER.info(String.format("%s = %s", propertyKey, prop.getValue()));
+            } else {
+                LOGGER.info(String.format("%s = (not shown here)", propertyKey));
+            }
         }
 
         config = new BasicConfiguration(properties);
@@ -105,9 +122,23 @@ public class BasicSimianArmyContext implements Monkey.Context {
         secret = config.getStr("simianarmy.client.aws.secretKey");
         region = config.getStrOrElse("simianarmy.client.aws.region", "us-east-1");
 
+        // Check for and configure optional proxy configuration
+        proxyHost = config.getStr("simianarmy.client.aws.proxyHost");
+        proxyPort = config.getStr("simianarmy.client.aws.proxyPort");
+        proxyUsernaem = config.getStr("simianarmy.client.aws.proxyUser");
+        proxyPassword = config.getStr("simianarmy.client.aws.proxyPassword");
+        if ((proxyHost != null) && (proxyPort != null)) {
+            awsClientConfig.setProxyHost(proxyHost);
+            awsClientConfig.setProxyPort(Integer.parseInt(proxyPort));
+            if ((proxyUsernaem != null) && (proxyPassword != null)) {
+                awsClientConfig.setProxyUsername(proxyUsernaem);
+                awsClientConfig.setProxyPassword(proxyPassword);
+            }
+        }
+
         assumeRoleArn = config.getStr("simianarmy.client.aws.assumeRoleArn");
         if (assumeRoleArn != null) {
-            this.awsCredentialsProvider = new STSAssumeRoleSessionCredentialsProvider(assumeRoleArn);
+            this.awsCredentialsProvider = new STSAssumeRoleSessionCredentialsProvider(assumeRoleArn, awsClientConfig);
         }
 
         // if credentials are set explicitly make them available to the AWS SDK
@@ -121,6 +152,18 @@ public class BasicSimianArmyContext implements Monkey.Context {
 
         createRecorder();
 
+    }
+
+    /**
+     * Checks whether it is safe to log the property based on the given
+     * property key.
+     * @param propertyKey The key for the property, expected to be resolvable to a String
+     * @return A boolean indicating whether it is safe to log the corresponding property
+     */
+    protected boolean isSafeToLog(Object propertyKey) {
+        String propertyKeyName = propertyKey.toString();
+        return !propertyKeyName.contains("secretKey")
+                && !propertyKeyName.contains("vsphere.password");
     }
 
     /** loads the given config on top of the config read by previous calls. */
@@ -173,11 +216,12 @@ public class BasicSimianArmyContext implements Monkey.Context {
     }
 
     /**
-     * Create the specific client within passed region, using the appropriate AWS credentials provider.
+     * Create the specific client within passed region, using the appropriate AWS credentials provider
+     * and client configuration.
      * @param clientRegion
      */
     protected void createClient(String clientRegion) {
-        this.client = new AWSClient(clientRegion, awsCredentialsProvider);
+        this.client = new AWSClient(clientRegion, awsCredentialsProvider, awsClientConfig);
         setCloudClient(this.client);
     }
 
