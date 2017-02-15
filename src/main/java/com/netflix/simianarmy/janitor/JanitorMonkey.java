@@ -17,13 +17,13 @@
  */
 package com.netflix.simianarmy.janitor;
 
-import java.util.List;
-
 import com.netflix.simianarmy.EventType;
 import com.netflix.simianarmy.Monkey;
 import com.netflix.simianarmy.MonkeyConfiguration;
 import com.netflix.simianarmy.MonkeyRecorder.Event;
 import com.netflix.simianarmy.MonkeyType;
+
+import java.util.List;
 
 /**
  * The abstract class for a Janitor Monkey.
@@ -34,8 +34,6 @@ public abstract class JanitorMonkey extends Monkey {
     public static final String JANITOR_TAG = "janitor";
     /** The key name of the Janitor meta tag used to tag resources. */
     public static final String JANITOR_META_TAG = "JANITOR_META";
-    /** The key name of the tag owner used to tag resources. */
-    public static final String OWNER_TAG_KEY = "owner";
     /** The key name of the tag instance used to tag resources. */
     public static final String INSTANCE_TAG_KEY = "instance";
     /** The key name of the tag detach time used to tag resources. */
@@ -70,6 +68,12 @@ public abstract class JanitorMonkey extends Monkey {
          * @return the region the monkey is running in.
          */
         String region();
+
+        /**
+         * The accountName the monkey is running in.
+         * @return the accountName the monkey is running in.
+         */
+        String accountName();
 
         /**
          * The Janitor resource tracker.
@@ -145,5 +149,21 @@ public abstract class JanitorMonkey extends Monkey {
      * @return the opt-out event
      */
     public abstract Event optOutResource(String resourceId);
+
+    /**
+     * Opt in a resource for Janitor Monkey.
+     * @param resourceId the resource id
+     * @param region the region of the resource
+     * @return the opt-in event
+     */
+    public abstract Event optInResource(String resourceId, String region);
+
+    /**
+     * Opt out a resource for Janitor Monkey.
+     * @param resourceId the resource id
+     * @param region the region of the resource
+     * @return the opt-out event
+     */
+    public abstract Event optOutResource(String resourceId, String region);
 
 }

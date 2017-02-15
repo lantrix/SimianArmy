@@ -1,6 +1,3 @@
-// CHECKSTYLE IGNORE Javadoc
-// CHECKSTYLE IGNORE MagicNumberCheck
-// CHECKSTYLE IGNORE ParameterNumber
 /*
  *
  *  Copyright 2012 Netflix, Inc.
@@ -18,6 +15,9 @@
  *     limitations under the License.
  *
  */
+// CHECKSTYLE IGNORE Javadoc
+// CHECKSTYLE IGNORE MagicNumberCheck
+// CHECKSTYLE IGNORE ParameterNumber
 package com.netflix.simianarmy.aws.janitor;
 
 import static org.mockito.Matchers.any;
@@ -68,7 +68,7 @@ public class TestSimpleDBJanitorResourceTracker extends SimpleDBJanitorResourceT
 
     @Test
     public void testAddResource() {
-        String id = "i-1234567";
+        String id = "i-12345678901234567";
         AWSResourceType resourceType = AWSResourceType.INSTANCE;
         Resource.CleanupState state = Resource.CleanupState.MARKED;
         String description = "This is a test resource.";

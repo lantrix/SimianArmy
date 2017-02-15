@@ -17,21 +17,11 @@
  */
 package com.netflix.simianarmy.basic;
 
-import java.io.InputStream;
-import java.lang.reflect.Constructor;
-import java.util.LinkedList;
-import java.util.Map.Entry;
-import java.util.Properties;
-import java.util.concurrent.TimeUnit;
-
-import org.apache.commons.lang.StringUtils;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
-
 import com.amazonaws.ClientConfiguration;
 import com.amazonaws.auth.AWSCredentialsProvider;
 import com.amazonaws.auth.DefaultAWSCredentialsProviderChain;
-
+import com.amazonaws.regions.Region;
+import com.amazonaws.regions.Regions;
 import com.netflix.simianarmy.CloudClient;
 import com.netflix.simianarmy.Monkey;
 import com.netflix.simianarmy.MonkeyCalendar;
@@ -39,9 +29,20 @@ import com.netflix.simianarmy.MonkeyConfiguration;
 import com.netflix.simianarmy.MonkeyRecorder;
 import com.netflix.simianarmy.MonkeyRecorder.Event;
 import com.netflix.simianarmy.MonkeyScheduler;
-import com.netflix.simianarmy.aws.SimpleDBRecorder;
+import com.netflix.simianarmy.aws.RDSRecorder;
 import com.netflix.simianarmy.aws.STSAssumeRoleSessionCredentialsProvider;
+import com.netflix.simianarmy.aws.SimpleDBRecorder;
 import com.netflix.simianarmy.client.aws.AWSClient;
+import org.apache.commons.lang.StringUtils;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+
+import java.io.InputStream;
+import java.lang.reflect.Constructor;
+import java.util.LinkedList;
+import java.util.Map.Entry;
+import java.util.Properties;
+import java.util.concurrent.TimeUnit;
 
 /**
  * The Class BasicSimianArmyContext.
@@ -81,22 +82,27 @@ public class BasicSimianArmyContext implements Monkey.Context {
     /** If configured, the ARN of Role to be assumed. */
     private final String assumeRoleArn;
 
+    private final String accountName;
+
     private final String account;
 
     private final String secret;
 
     private final String region;
 
-    private ClientConfiguration awsClientConfig = new ClientConfiguration();
+    protected ClientConfiguration awsClientConfig = new ClientConfiguration();
 
     /* If configured, the proxy to be used when making AWS API requests */
     private final String proxyHost;
 
     private final String proxyPort;
 
-    private final String proxyUsernaem;
+    private final String proxyUsername;
 
     private final String proxyPassword;
+
+    /** The key name of the tag owner used to tag resources - across all Monkeys */
+    public static String GLOBAL_OWNER_TAGKEY;
 
     /** protected constructor as the Shell is meant to be subclassed. */
     protected BasicSimianArmyContext(String... configFiles) {
@@ -116,22 +122,31 @@ public class BasicSimianArmyContext implements Monkey.Context {
         }
 
         config = new BasicConfiguration(properties);
-        calendar = new BasicCalendar(config);
 
         account = config.getStr("simianarmy.client.aws.accountKey");
         secret = config.getStr("simianarmy.client.aws.secretKey");
-        region = config.getStrOrElse("simianarmy.client.aws.region", "us-east-1");
+        accountName = config.getStrOrElse("simianarmy.client.aws.accountName", "Default");
+
+        String defaultRegion = "us-east-1";
+        Region currentRegion = Regions.getCurrentRegion();
+
+        if (currentRegion != null) {
+            defaultRegion = currentRegion.getName();
+        }
+
+        region = config.getStrOrElse("simianarmy.client.aws.region", defaultRegion);
+        GLOBAL_OWNER_TAGKEY = config.getStrOrElse("simianarmy.tags.owner", "owner");
 
         // Check for and configure optional proxy configuration
         proxyHost = config.getStr("simianarmy.client.aws.proxyHost");
         proxyPort = config.getStr("simianarmy.client.aws.proxyPort");
-        proxyUsernaem = config.getStr("simianarmy.client.aws.proxyUser");
+        proxyUsername = config.getStr("simianarmy.client.aws.proxyUser");
         proxyPassword = config.getStr("simianarmy.client.aws.proxyPassword");
         if ((proxyHost != null) && (proxyPort != null)) {
             awsClientConfig.setProxyHost(proxyHost);
             awsClientConfig.setProxyPort(Integer.parseInt(proxyPort));
-            if ((proxyUsernaem != null) && (proxyPassword != null)) {
-                awsClientConfig.setProxyUsername(proxyUsernaem);
+            if ((proxyUsername != null) && (proxyPassword != null)) {
+                awsClientConfig.setProxyUsername(proxyUsername);
                 awsClientConfig.setProxyPassword(proxyPassword);
             }
         }
@@ -139,6 +154,7 @@ public class BasicSimianArmyContext implements Monkey.Context {
         assumeRoleArn = config.getStr("simianarmy.client.aws.assumeRoleArn");
         if (assumeRoleArn != null) {
             this.awsCredentialsProvider = new STSAssumeRoleSessionCredentialsProvider(assumeRoleArn, awsClientConfig);
+            LOGGER.info("Using STSAssumeRoleSessionCredentialsProvider with assume role " + assumeRoleArn);
         }
 
         // if credentials are set explicitly make them available to the AWS SDK
@@ -147,6 +163,8 @@ public class BasicSimianArmyContext implements Monkey.Context {
         }
 
         createClient();
+
+        createCalendar();
 
         createScheduler();
 
@@ -170,6 +188,7 @@ public class BasicSimianArmyContext implements Monkey.Context {
     protected void loadConfigurationFileIntoProperties(String propertyFileName) {
         String propFile = System.getProperty(propertyFileName, "/" + propertyFileName);
         try {
+        	LOGGER.info("loading properties file: " + propFile);
             InputStream is = BasicSimianArmyContext.class.getResourceAsStream(propFile);
             try {
                 properties.load(is);
@@ -195,7 +214,17 @@ public class BasicSimianArmyContext implements Monkey.Context {
     private void createRecorder() {
         @SuppressWarnings("rawtypes")
         Class recorderClass = loadClientClass("simianarmy.client.recorder.class");
-        if (recorderClass == null || recorderClass.equals(SimpleDBRecorder.class)) {
+        if (recorderClass != null && recorderClass.equals(RDSRecorder.class)) {
+            String dbDriver = configuration().getStr("simianarmy.recorder.db.driver");
+            String dbUser = configuration().getStr("simianarmy.recorder.db.user");
+            String dbPass = configuration().getStr("simianarmy.recorder.db.pass");
+            String dbUrl = configuration().getStr("simianarmy.recorder.db.url");
+            String dbTable = configuration().getStr("simianarmy.recorder.db.table");
+            
+            RDSRecorder rdsRecorder = new RDSRecorder(dbDriver, dbUser, dbPass, dbUrl, dbTable, client.region());
+            rdsRecorder.init();
+            setRecorder(rdsRecorder);        	
+        } else if (recorderClass == null || recorderClass.equals(SimpleDBRecorder.class)) {
             String domain = config.getStrOrElse("simianarmy.recorder.sdb.domain", "SIMIAN_ARMY");
             if (client != null) {
                 SimpleDBRecorder simpleDbRecorder = new SimpleDBRecorder(client, domain);
@@ -204,6 +233,17 @@ public class BasicSimianArmyContext implements Monkey.Context {
             }
         } else {
             setRecorder((MonkeyRecorder) factory(recorderClass));
+        }
+    }
+
+    @SuppressWarnings("unchecked")
+    private void createCalendar() {
+        @SuppressWarnings("rawtypes")
+        Class calendarClass = loadClientClass("simianarmy.calendar.class");
+        if (calendarClass == null || calendarClass.equals(BasicCalendar.class)) {
+            setCalendar(new BasicCalendar(config));
+        } else {
+            setCalendar((MonkeyCalendar) factory(calendarClass));
         }
     }
 
@@ -239,6 +279,14 @@ public class BasicSimianArmyContext implements Monkey.Context {
      */
     public String region() {
         return region;
+    }
+
+    /**
+     * Gets the accountName
+     * @return the accountName
+     */
+    public String accountName() {
+        return accountName;
     }
 
     @Override
@@ -378,11 +426,19 @@ public class BasicSimianArmyContext implements Monkey.Context {
     }
 
     /**
+     * Gets the AWS client configuration.
+     * @return the AWS client configuration
+     */
+    public ClientConfiguration getAwsClientConfig() {
+        return awsClientConfig;
+    }
+
+    /**
      * Load a class specified by the config; for drop-in replacements.
      * (Duplicates a method in MonkeyServer; refactor to util?).
      *
      * @param key
-     * @return
+     * @return the loaded class or null if the class is not found
      */
     @SuppressWarnings("rawtypes")
     private Class loadClientClass(String key) {

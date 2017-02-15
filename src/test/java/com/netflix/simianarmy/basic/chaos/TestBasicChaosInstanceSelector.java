@@ -1,4 +1,3 @@
-// CHECKSTYLE IGNORE Javadoc
 /*
  *
  *  Copyright 2012 Netflix, Inc.
@@ -16,14 +15,12 @@
  *     limitations under the License.
  *
  */
+// CHECKSTYLE IGNORE Javadoc
 package com.netflix.simianarmy.basic.chaos;
 
-import java.util.Collection;
-import java.util.List;
-import java.util.Arrays;
-import java.util.Map;
-import java.util.HashMap;
+import java.util.*;
 
+import com.amazonaws.services.autoscaling.model.TagDescription;
 import com.netflix.simianarmy.GroupType;
 import com.netflix.simianarmy.chaos.ChaosInstanceSelector;
 import com.netflix.simianarmy.chaos.ChaosCrawler.InstanceGroup;
@@ -61,9 +58,13 @@ public class TestBasicChaosInstanceSelector {
             return "region";
         }
 
+        public List<TagDescription> tags() {
+            return Collections.<TagDescription>emptyList();
+        }
+
         public List<String> instances() {
-            return Arrays.asList("i-123456780", "i-123456781", "i-123456782", "i-123456783", "i-123456784",
-                    "i-123456785", "i-123456786", "i-123456787", "i-123456788", "i-123456789");
+            return Arrays.asList("i-123456789012345670", "i-123456789012345671", "i-123456789012345672", "i-123456789012345673", "i-123456789012345674",
+                    "i-123456789012345675", "i-123456789012345676", "i-123456789012345677", "i-123456789012345678", "i-123456789012345679");
         }
 
         public void addInstance(String ignored) {

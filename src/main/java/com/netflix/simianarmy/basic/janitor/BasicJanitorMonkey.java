@@ -17,23 +17,22 @@
  */
 package com.netflix.simianarmy.basic.janitor;
 
-import java.util.Collection;
-import java.util.List;
-
-import org.apache.commons.lang.StringUtils;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
-
-import com.netflix.simianarmy.MonkeyCalendar;
-import com.netflix.simianarmy.MonkeyConfiguration;
-import com.netflix.simianarmy.MonkeyRecorder;
+import com.netflix.servo.annotations.DataSourceType;
+import com.netflix.servo.annotations.Monitor;
+import com.netflix.servo.monitor.Monitors;
+import com.netflix.simianarmy.*;
 import com.netflix.simianarmy.MonkeyRecorder.Event;
-import com.netflix.simianarmy.Resource;
-import com.netflix.simianarmy.ResourceType;
 import com.netflix.simianarmy.janitor.AbstractJanitor;
 import com.netflix.simianarmy.janitor.JanitorEmailNotifier;
 import com.netflix.simianarmy.janitor.JanitorMonkey;
 import com.netflix.simianarmy.janitor.JanitorResourceTracker;
+import org.apache.commons.lang.StringUtils;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+
+import java.util.Collection;
+import java.util.List;
+import java.util.concurrent.atomic.AtomicLong;
 
 /** The basic implementation of Janitor Monkey. */
 public class BasicJanitorMonkey extends JanitorMonkey {
@@ -53,12 +52,23 @@ public class BasicJanitorMonkey extends JanitorMonkey {
 
     private final String region;
 
+    private final String accountName;
+
     private final JanitorResourceTracker resourceTracker;
 
     private final MonkeyRecorder recorder;
 
     private final MonkeyCalendar calendar;
+    
+    /** Keep track of the number of monkey runs */
+    protected final AtomicLong monkeyRuns = new AtomicLong(0);    
 
+    /** Keep track of the number of monkey errors */
+    protected final AtomicLong monkeyErrors = new AtomicLong(0);    
+    
+    /** Emit a servor signal to track the running monkey */
+    protected final AtomicLong monkeyRunning = new AtomicLong(0);    
+    
     /**
      * Instantiates a new basic janitor monkey.
      *
@@ -72,9 +82,13 @@ public class BasicJanitorMonkey extends JanitorMonkey {
         janitors = ctx.janitors();
         emailNotifier = ctx.emailNotifier();
         region = ctx.region();
+        accountName = ctx.accountName();
         resourceTracker = ctx.resourceTracker();
         recorder = ctx.recorder();
         calendar = ctx.calendar();
+
+        // register this janitor with servo
+        Monitors.registerObject("simianarmy.janitor", this);                
     }
 
     /** {@inheritDoc} */
@@ -87,9 +101,22 @@ public class BasicJanitorMonkey extends JanitorMonkey {
             return;
         } else {
             LOGGER.info(String.format("Marking resources with %d janitors.", janitors.size()));
+            monkeyRuns.incrementAndGet();
+            monkeyRunning.set(1);
+            
+            // prepare to run, this just resets the counts so monitoring is sane
             for (AbstractJanitor janitor : janitors) {
-                LOGGER.info(String.format("Running janitor for region %s", janitor.getRegion()));
-                janitor.markResources();
+            	janitor.prepareToRun();
+            }
+            
+            for (AbstractJanitor janitor : janitors) {
+                LOGGER.info(String.format("Running %s janitor for region %s", janitor.getResourceType(), janitor.getRegion()));
+                try {
+                	janitor.markResources();
+                } catch (Exception e) {
+                	monkeyErrors.incrementAndGet();
+                	LOGGER.error(String.format("Got an exception while %s janitor was marking for region %s", janitor.getResourceType(), janitor.getRegion()), e);
+                }
                 LOGGER.info(String.format("Marked %d resources of type %s in the last run.",
                         janitor.getMarkedResources().size(), janitor.getResourceType().name()));
                 LOGGER.info(String.format("Unmarked %d resources of type %s in the last run.",
@@ -104,7 +131,12 @@ public class BasicJanitorMonkey extends JanitorMonkey {
 
             LOGGER.info(String.format("Cleaning resources with %d janitors.", janitors.size()));
             for (AbstractJanitor janitor : janitors) {
-                janitor.cleanupResources();
+            	try {
+            		janitor.cleanupResources();
+                } catch (Exception e) {
+                	monkeyErrors.incrementAndGet();
+                	LOGGER.error(String.format("Got an exception while %s janitor was cleaning for region %s", janitor.getResourceType(), janitor.getRegion()), e);
+                }
                 LOGGER.info(String.format("Cleaned %d resources of type %s in the last run.",
                         janitor.getCleanedResources().size(), janitor.getResourceType()));
                 LOGGER.info(String.format("Failed to clean %d resources of type %s in the last run.",
@@ -113,28 +145,44 @@ public class BasicJanitorMonkey extends JanitorMonkey {
             if (cfg.getBoolOrElse(NS + "summaryEmail.enabled", true)) {
                 sendJanitorSummaryEmail();
             }
+        	monkeyRunning.set(0);
         }
     }
 
     @Override
     public Event optInResource(String resourceId) {
-        return optInOrOutResource(resourceId, true);
+        return optInOrOutResource(resourceId, true, region);
     }
 
     @Override
     public Event optOutResource(String resourceId) {
-        return optInOrOutResource(resourceId, false);
+        return optInOrOutResource(resourceId, false, region);
     }
 
-    private Event optInOrOutResource(String resourceId, boolean optIn) {
-        Resource resource = resourceTracker.getResource(resourceId);
+    @Override
+    public Event optInResource(String resourceId, String resourceRegion) {
+        return optInOrOutResource(resourceId, true, resourceRegion);
+    }
+
+    @Override
+    public Event optOutResource(String resourceId, String resourceRegion) {
+        return optInOrOutResource(resourceId, false, resourceRegion);
+    }
+
+    private Event optInOrOutResource(String resourceId, boolean optIn, String resourceRegion) {
+        if (resourceRegion == null) {
+            resourceRegion = region;
+        }
+
+        Resource resource = resourceTracker.getResource(resourceId, resourceRegion);
         if (resource == null) {
             return null;
         }
+
         EventTypes eventType = optIn ? EventTypes.OPT_IN_RESOURCE : EventTypes.OPT_OUT_RESOURCE;
         long timestamp = calendar.now().getTimeInMillis();
         // The same resource can have multiple events, so we add the timestamp to the id.
-        Event evt = recorder.newEvent(Type.JANITOR, eventType, region, resourceId + "@" + timestamp);
+        Event evt = recorder.newEvent(Type.JANITOR, eventType, resourceRegion, resourceId + "@" + timestamp);
         recorder.recordEvent(evt);
         resource.setOptOutOfJanitor(!optIn);
         resourceTracker.addOrUpdate(resource);
@@ -192,7 +240,7 @@ public class BasicJanitorMonkey extends JanitorMonkey {
      * @return the subject of the summary email
      */
     protected String getSummaryEmailSubject() {
-        return String.format("Janitor monkey execution summary (%s)", region);
+        return String.format("Janitor monkey execution summary (%s, %s)", accountName, region);
     }
 
     /**
@@ -218,4 +266,20 @@ public class BasicJanitorMonkey extends JanitorMonkey {
         LOGGER.info("JanitorMonkey disabled, set {}=true", prop);
         return false;
     }
+    
+    @Monitor(name="runs", type=DataSourceType.COUNTER)
+    public long getMonkeyRuns() {
+      return monkeyRuns.get();
+    }
+
+    @Monitor(name="errors", type=DataSourceType.GAUGE)
+    public long getMonkeyErrors() {
+      return monkeyErrors.get();
+    }
+
+    @Monitor(name="running", type=DataSourceType.GAUGE)
+    public long getMonkeyRunning() {
+      return monkeyRunning.get();
+    }
+    
 }

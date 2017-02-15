@@ -1,5 +1,3 @@
-// CHECKSTYLE IGNORE Javadoc
-//CHECKSTYLE IGNORE MagicNumber
 /*
  *
  *  Copyright 2012 Netflix, Inc.
@@ -17,6 +15,8 @@
  *     limitations under the License.
  *
  */
+// CHECKSTYLE IGNORE Javadoc
+//CHECKSTYLE IGNORE MagicNumber
 package com.netflix.simianarmy.resources.chaos;
 
 import static org.mockito.Matchers.any;
@@ -177,7 +177,7 @@ public class TestChaosMonkeyResource {
         Map<String, String> anyMap = anyMap();
 
         when(mockRecorder.findEvents(any(MonkeyType.class), any(EventType.class), anyMap, any(Date.class))).thenReturn(
-                Arrays.asList(mkEvent("i-1234356780"), mkEvent("i-123456781")));
+                Arrays.asList(mkEvent("i-123456789012345670"), mkEvent("i-123456789012345671")));
 
         try {
             Response resp = resource.getChaosEvents(mockUriInfo);
@@ -202,8 +202,8 @@ public class TestChaosMonkeyResource {
         final MonkeyType monkeyType = ChaosMonkey.Type.CHAOS;
         final EventType eventType = ChaosMonkey.EventTypes.CHAOS_TERMINATION;
         // SUPPRESS CHECKSTYLE MagicNumber
-        return new BasicRecorderEvent(monkeyType, eventType, "region", "id", 1330538400000L)
-        .addField("instanceId", instance).addField("groupType", "ASG").addField("groupName", "testGroup");
+        return new BasicRecorderEvent(monkeyType, eventType, "region", instance, 1330538400000L)
+        .addField("groupType", "ASG").addField("groupName", "testGroup");
     }
 
     public static class MockTestChaosMonkeyContext extends TestChaosMonkeyContext {

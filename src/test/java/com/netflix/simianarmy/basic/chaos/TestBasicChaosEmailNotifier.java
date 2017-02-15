@@ -1,4 +1,3 @@
-// CHECKSTYLE IGNORE Javadoc
 /*
  *
  *  Copyright 2013 Netflix, Inc.
@@ -16,6 +15,7 @@
  *     limitations under the License.
  *
  */
+// CHECKSTYLE IGNORE Javadoc
 package com.netflix.simianarmy.basic.chaos;
 
 import static org.mockito.Mockito.doNothing;
@@ -48,7 +48,7 @@ public class TestBasicChaosEmailNotifier {
     private String name = "name0";
     private String region = "reg1";
     private String to = "foo@bar.com";
-    private String instanceId = "i-123456780";
+    private String instanceId = "i-12345678901234567";
     private String subjectPrefix = "Subject Prefix - ";
     private String subjectSuffix = " - Subject Suffix ";
     private String bodyPrefix = "Body Prefix - ";
@@ -65,6 +65,41 @@ public class TestBasicChaosEmailNotifier {
     @BeforeMethod
     public void beforeMethod() {
         properties = new Properties();
+    }
+
+    @Test
+    public void testInvalidEmailAddresses() {
+        String[] invalidEmails = new String[] { "username",
+                                                "username@.com.my",
+                                                "username123@example.a",
+                                                "username123@.com",
+                                                "username123@.com.com",
+                                                "username()*@example.com",
+                                                "username@%*.com"};
+        basicChaosEmailNotifier = new BasicChaosEmailNotifier(new BasicConfiguration(properties), sesClient, null);
+
+        for (String emailAddress : invalidEmails) {
+            Assert.assertFalse(basicChaosEmailNotifier.isValidEmail(emailAddress));
+        }
+    }
+
+    @Test
+    public void testValidEmailAddresses() {
+        String[] validEmails = new String[] { "username-100@example.com",
+                                              "name.surname+ml-info@example.com",
+                                              "username.100@example.com",
+                                              "username111@example.com",
+                                              "username-100@username.net",
+                                              "username.100@example.com.au",
+                                              "username@1.com",
+                                              "username@example.com",
+                                              "username+100@example.com",
+                                              "username-100@example-test.com" };
+        basicChaosEmailNotifier = new BasicChaosEmailNotifier(new BasicConfiguration(properties), sesClient, null);
+
+        for (String emailAddress : validEmails) {
+            Assert.assertTrue(basicChaosEmailNotifier.isValidEmail(emailAddress));
+        }
     }
 
     @Test

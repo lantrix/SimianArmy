@@ -1,4 +1,3 @@
-// CHECKSTYLE IGNORE Javadoc
 /*
  *
  *  Copyright 2012 Netflix, Inc.
@@ -16,6 +15,7 @@
  *     limitations under the License.
  *
  */
+// CHECKSTYLE IGNORE Javadoc
 package com.netflix.simianarmy.basic;
 
 import java.util.Calendar;
@@ -204,7 +204,7 @@ public class TestBasicCalendar extends BasicCalendar {
         Assert.assertEquals(businessDay.get(Calendar.YEAR), 2013);
         Assert.assertEquals(businessDay.get(Calendar.MONTH), Calendar.JANUARY);
         Assert.assertEquals(businessDay.get(Calendar.DAY_OF_MONTH), 2);
-        Assert.assertEquals(businessDay.get(Calendar.HOUR_OF_DAY),
-                hour);
+        Assert.assertEquals(businessDay.get(Calendar.HOUR_OF_DAY), hour);
     }
+
 }

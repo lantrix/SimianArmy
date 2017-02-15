@@ -1,4 +1,3 @@
-// CHECKSTYLE IGNORE Javadoc
 /*
  *
  *  Copyright 2013 Netflix, Inc.
@@ -16,6 +15,7 @@
  *     limitations under the License.
  *
  */
+// CHECKSTYLE IGNORE Javadoc
 package com.netflix.simianarmy.conformity;
 
 import com.google.common.collect.Maps;

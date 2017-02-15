@@ -1,4 +1,3 @@
-// CHECKSTYLE IGNORE Javadoc
 /*
  *
  *  Copyright 2012 Netflix, Inc.
@@ -16,29 +15,10 @@
  *     limitations under the License.
  *
  */
+// CHECKSTYLE IGNORE Javadoc
 package com.netflix.simianarmy.chaos;
 
-import java.io.InputStream;
-import java.util.ArrayList;
-import java.util.Arrays;
-import java.util.Collection;
-import java.util.Collections;
-import java.util.EnumSet;
-import java.util.HashMap;
-import java.util.LinkedList;
-import java.util.List;
-import java.util.Map;
-import java.util.Properties;
-
-import org.jclouds.compute.ComputeService;
-import org.jclouds.compute.domain.ExecChannel;
-import org.jclouds.compute.domain.ExecResponse;
-import org.jclouds.domain.LoginCredentials;
-import org.jclouds.io.Payload;
-import org.jclouds.ssh.SshClient;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
-
+import com.amazonaws.services.autoscaling.model.TagDescription;
 import com.google.common.base.Joiner;
 import com.google.common.collect.Lists;
 import com.google.common.collect.Maps;
@@ -49,6 +29,17 @@ import com.netflix.simianarmy.TestMonkeyContext;
 import com.netflix.simianarmy.basic.BasicConfiguration;
 import com.netflix.simianarmy.basic.chaos.BasicChaosInstanceSelector;
 import com.netflix.simianarmy.chaos.ChaosCrawler.InstanceGroup;
+import org.jclouds.compute.ComputeService;
+import org.jclouds.compute.domain.ExecChannel;
+import org.jclouds.compute.domain.ExecResponse;
+import org.jclouds.domain.LoginCredentials;
+import org.jclouds.io.Payload;
+import org.jclouds.ssh.SshClient;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+
+import java.io.InputStream;
+import java.util.*;
 
 public class TestChaosMonkeyContext extends TestMonkeyContext implements ChaosMonkey.Context {
     private static final Logger LOGGER = LoggerFactory.getLogger(TestChaosMonkeyContext.class);
@@ -89,6 +80,7 @@ public class TestChaosMonkeyContext extends TestMonkeyContext implements ChaosMo
         private final String name;
         private final String region;
         private final List<String> instances = new ArrayList<String>();
+        private final List<TagDescription> tags = new ArrayList<TagDescription>();
 
         public TestInstanceGroup(GroupType type, String name, String region, String... instances) {
             this.type = type;
@@ -97,6 +89,11 @@ public class TestChaosMonkeyContext extends TestMonkeyContext implements ChaosMo
             for (String i : instances) {
                 this.instances.add(i);
             }
+        }
+
+        @Override
+        public List<TagDescription> tags() {
+            return tags;
         }
 
         @Override
@@ -147,16 +144,16 @@ public class TestChaosMonkeyContext extends TestMonkeyContext implements ChaosMo
 
             @Override
             public List<InstanceGroup> groups() {
-                InstanceGroup gA0 = new TestInstanceGroup(CrawlerTypes.TYPE_A, "name0", "reg1", "0:i-123456780");
-                InstanceGroup gA1 = new TestInstanceGroup(CrawlerTypes.TYPE_A, "name1", "reg1", "1:i-123456781");
-                InstanceGroup gB2 = new TestInstanceGroup(CrawlerTypes.TYPE_B, "name2", "reg1", "2:i-123456782");
-                InstanceGroup gB3 = new TestInstanceGroup(CrawlerTypes.TYPE_B, "name3", "reg1", "3:i-123456783");
-                InstanceGroup gC1 = new TestInstanceGroup(CrawlerTypes.TYPE_C, "name4", "reg1", "3:i-123456784",
-                        "3:i-123456785");
-                InstanceGroup gC2 = new TestInstanceGroup(CrawlerTypes.TYPE_C, "name5", "reg1", "3:i-123456786",
-                        "3:i-123456787");
+                InstanceGroup gA0 = new TestInstanceGroup(CrawlerTypes.TYPE_A, "name0", "reg1", "0:i-123456789012345670");
+                InstanceGroup gA1 = new TestInstanceGroup(CrawlerTypes.TYPE_A, "name1", "reg1", "1:i-123456789012345671");
+                InstanceGroup gB2 = new TestInstanceGroup(CrawlerTypes.TYPE_B, "name2", "reg1", "2:i-123456789012345672");
+                InstanceGroup gB3 = new TestInstanceGroup(CrawlerTypes.TYPE_B, "name3", "reg1", "3:i-123456789012345673");
+                InstanceGroup gC1 = new TestInstanceGroup(CrawlerTypes.TYPE_C, "name4", "reg1", "3:i-123456789012345674",
+                        "3:i-123456789012345675");
+                InstanceGroup gC2 = new TestInstanceGroup(CrawlerTypes.TYPE_C, "name5", "reg1", "3:i-123456789012345676",
+                        "3:i-123456789012345677");
                 InstanceGroup gD0 = new TestInstanceGroup(CrawlerTypes.TYPE_D, "new-group-TestGroup1-XXXXXXXXX",
-                        "reg1", "3:i-123456786", "3:i-123456787");
+                        "reg1", "3:i-123456789012345678", "3:i-123456789012345679");
                 return Arrays.asList(gA0, gA1, gB2, gB3, gC1, gC2, gD0);
             }
 
@@ -243,6 +240,14 @@ public class TestChaosMonkeyContext extends TestMonkeyContext implements ChaosMo
 
             @Override
             public void deleteLaunchConfiguration(String launchConfigName) {
+            }
+
+            @Override
+            public void deleteElasticLoadBalancer(String elbId) {
+            }
+
+            @Override
+            public void deleteDNSRecord(String dnsname, String dnstype, String hostedzoneid) {
             }
 
             @Override

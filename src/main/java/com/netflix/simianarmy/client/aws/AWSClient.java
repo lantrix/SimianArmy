@@ -21,54 +21,21 @@ import com.amazonaws.AmazonServiceException;
 import com.amazonaws.ClientConfiguration;
 import com.amazonaws.auth.AWSCredentialsProvider;
 import com.amazonaws.services.autoscaling.AmazonAutoScalingClient;
-import com.amazonaws.services.autoscaling.model.AutoScalingGroup;
-import com.amazonaws.services.autoscaling.model.AutoScalingInstanceDetails;
-import com.amazonaws.services.autoscaling.model.DeleteAutoScalingGroupRequest;
-import com.amazonaws.services.autoscaling.model.DeleteLaunchConfigurationRequest;
-import com.amazonaws.services.autoscaling.model.DescribeAutoScalingGroupsRequest;
-import com.amazonaws.services.autoscaling.model.DescribeAutoScalingGroupsResult;
-import com.amazonaws.services.autoscaling.model.DescribeAutoScalingInstancesRequest;
-import com.amazonaws.services.autoscaling.model.DescribeAutoScalingInstancesResult;
-import com.amazonaws.services.autoscaling.model.DescribeLaunchConfigurationsRequest;
-import com.amazonaws.services.autoscaling.model.DescribeLaunchConfigurationsResult;
-import com.amazonaws.services.autoscaling.model.LaunchConfiguration;
+import com.amazonaws.services.autoscaling.model.*;
 import com.amazonaws.services.ec2.AmazonEC2;
 import com.amazonaws.services.ec2.AmazonEC2Client;
-import com.amazonaws.services.ec2.model.CreateSecurityGroupRequest;
-import com.amazonaws.services.ec2.model.CreateSecurityGroupResult;
-import com.amazonaws.services.ec2.model.CreateTagsRequest;
-import com.amazonaws.services.ec2.model.DeleteSnapshotRequest;
-import com.amazonaws.services.ec2.model.DeleteVolumeRequest;
-import com.amazonaws.services.ec2.model.DeregisterImageRequest;
-import com.amazonaws.services.ec2.model.DescribeImagesRequest;
-import com.amazonaws.services.ec2.model.DescribeImagesResult;
-import com.amazonaws.services.ec2.model.DescribeInstancesRequest;
-import com.amazonaws.services.ec2.model.DescribeInstancesResult;
-import com.amazonaws.services.ec2.model.DescribeSecurityGroupsRequest;
-import com.amazonaws.services.ec2.model.DescribeSecurityGroupsResult;
-import com.amazonaws.services.ec2.model.DescribeSnapshotsRequest;
-import com.amazonaws.services.ec2.model.DescribeSnapshotsResult;
-import com.amazonaws.services.ec2.model.DescribeVolumesRequest;
-import com.amazonaws.services.ec2.model.DescribeVolumesResult;
-import com.amazonaws.services.ec2.model.DetachVolumeRequest;
-import com.amazonaws.services.ec2.model.EbsInstanceBlockDevice;
-import com.amazonaws.services.ec2.model.Image;
+import com.amazonaws.services.ec2.model.*;
 import com.amazonaws.services.ec2.model.Instance;
-import com.amazonaws.services.ec2.model.InstanceBlockDeviceMapping;
-import com.amazonaws.services.ec2.model.ModifyInstanceAttributeRequest;
-import com.amazonaws.services.ec2.model.Reservation;
-import com.amazonaws.services.ec2.model.SecurityGroup;
-import com.amazonaws.services.ec2.model.Snapshot;
 import com.amazonaws.services.ec2.model.Tag;
-import com.amazonaws.services.ec2.model.TerminateInstancesRequest;
-import com.amazonaws.services.ec2.model.Volume;
 import com.amazonaws.services.elasticloadbalancing.AmazonElasticLoadBalancingClient;
-import com.amazonaws.services.elasticloadbalancing.model.DescribeLoadBalancerAttributesRequest;
-import com.amazonaws.services.elasticloadbalancing.model.DescribeLoadBalancerAttributesResult;
+import com.amazonaws.services.elasticloadbalancing.model.*;
 import com.amazonaws.services.elasticloadbalancing.model.DescribeLoadBalancersRequest;
 import com.amazonaws.services.elasticloadbalancing.model.DescribeLoadBalancersResult;
-import com.amazonaws.services.elasticloadbalancing.model.LoadBalancerAttributes;
-import com.amazonaws.services.elasticloadbalancing.model.LoadBalancerDescription;
+import com.amazonaws.services.elasticloadbalancing.model.DescribeTagsRequest;
+import com.amazonaws.services.elasticloadbalancing.model.DescribeTagsResult;
+import com.amazonaws.services.elasticloadbalancing.model.TagDescription;
+import com.amazonaws.services.route53.AmazonRoute53Client;
+import com.amazonaws.services.route53.model.*;
 import com.amazonaws.services.simpledb.AmazonSimpleDB;
 import com.amazonaws.services.simpledb.AmazonSimpleDBClient;
 import com.google.common.base.Objects;
@@ -79,7 +46,6 @@ import com.google.common.collect.Sets;
 import com.google.inject.Module;
 import com.netflix.simianarmy.CloudClient;
 import com.netflix.simianarmy.NotFoundException;
-
 import org.apache.commons.lang.Validate;
 import org.jclouds.ContextBuilder;
 import org.jclouds.compute.ComputeService;
@@ -89,20 +55,14 @@ import org.jclouds.compute.domain.ComputeMetadata;
 import org.jclouds.compute.domain.NodeMetadata;
 import org.jclouds.compute.domain.NodeMetadataBuilder;
 import org.jclouds.domain.LoginCredentials;
-import org.jclouds.ec2.EC2ApiMetadata;
 import org.jclouds.logging.slf4j.config.SLF4JLoggingModule;
 import org.jclouds.ssh.SshClient;
 import org.jclouds.ssh.jsch.config.JschSshClientModule;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
-import java.util.ArrayList;
-import java.util.Arrays;
-import java.util.Collections;
-import java.util.LinkedList;
-import java.util.List;
-import java.util.Map;
-import java.util.Set;
+import java.util.*;
+
 
 
 /**
@@ -116,11 +76,19 @@ public class AWSClient implements CloudClient {
     /** The region. */
     private final String region;
 
+    /** The plain name for AWS account */
+    private final String accountName;
+
+    /** Maximum retry count for Simple DB */
+    private static final int SIMPLE_DB_MAX_RETRY = 11;
+
     private final AWSCredentialsProvider awsCredentialsProvider;
 
     private final ClientConfiguration awsClientConfig;
 
     private ComputeService jcloudsComputeService;
+    
+    
 
     /**
      * This constructor will let the AWS SDK obtain the credentials, which will
@@ -156,6 +124,7 @@ public class AWSClient implements CloudClient {
      */
     public AWSClient(String region) {
         this.region = region;
+        this.accountName = "Default";
         this.awsCredentialsProvider = null;
         this.awsClientConfig = null;
     }
@@ -169,6 +138,7 @@ public class AWSClient implements CloudClient {
      */
     public AWSClient(String region, AWSCredentialsProvider awsCredentialsProvider) {
         this.region = region;
+        this.accountName = "Default";
         this.awsCredentialsProvider = awsCredentialsProvider;
         this.awsClientConfig = null;
     }
@@ -182,6 +152,7 @@ public class AWSClient implements CloudClient {
      */
     public AWSClient(String region, ClientConfiguration awsClientConfig) {
         this.region = region;
+        this.accountName = "Default";
         this.awsCredentialsProvider = null;
         this.awsClientConfig = awsClientConfig;
     }
@@ -197,6 +168,7 @@ public class AWSClient implements CloudClient {
      */
     public AWSClient(String region, AWSCredentialsProvider awsCredentialsProvider, ClientConfiguration awsClientConfig) {
         this.region = region;
+        this.accountName = "Default";
         this.awsCredentialsProvider = awsCredentialsProvider;
         this.awsClientConfig = awsClientConfig;
     }
@@ -208,6 +180,16 @@ public class AWSClient implements CloudClient {
      */
     public String region() {
         return region;
+    }
+
+    /**
+     * The accountName.
+     *
+     * @return the plain name for the aws account easier to identify which account
+     * monkey is running in
+     */
+    public String accountName() {
+        return accountName;
     }
 
     /**
@@ -283,25 +265,49 @@ public class AWSClient implements CloudClient {
     }
 
     /**
+     * Amazon Route53 client. Abstracted to aid testing.
+     *
+     * @return the Amazon Route53 client
+     */
+    protected AmazonRoute53Client route53Client() {
+        AmazonRoute53Client client;
+        if (awsClientConfig == null) {
+            if (awsCredentialsProvider == null) {
+                client = new AmazonRoute53Client();
+            } else {
+                client = new AmazonRoute53Client(awsCredentialsProvider);
+            }
+        } else {
+            if (awsCredentialsProvider == null) {
+                client = new AmazonRoute53Client(awsClientConfig);
+            } else {
+                client = new AmazonRoute53Client(awsCredentialsProvider, awsClientConfig);
+            }
+        }
+        client.setEndpoint("route53.amazonaws.com");
+        return client;
+    }
+
+    /**
      * Amazon SimpleDB client.
      *
      * @return the Amazon SimpleDB client
      */
     public AmazonSimpleDB sdbClient() {
         AmazonSimpleDB client;
-        if (awsClientConfig == null) {
-            if (awsCredentialsProvider == null) {
-                client = new AmazonSimpleDBClient();
-            } else {
-                client = new AmazonSimpleDBClient(awsCredentialsProvider);
-            }
-        } else {
-            if (awsCredentialsProvider == null) {
-                client = new AmazonSimpleDBClient(awsClientConfig);
-            } else {
-                client = new AmazonSimpleDBClient(awsCredentialsProvider, awsClientConfig);
-            }
+        ClientConfiguration cc = awsClientConfig;
+        
+        if (cc == null) { 
+          cc = new ClientConfiguration();
+          cc.setMaxErrorRetry(SIMPLE_DB_MAX_RETRY);
         }
+        
+        if (awsCredentialsProvider == null) {
+            client = new AmazonSimpleDBClient(cc);
+        } else {
+            client = new AmazonSimpleDBClient(awsCredentialsProvider, cc);
+        }
+        
         // us-east-1 has special naming
         // http://docs.amazonwebservices.com/general/latest/gr/rande.html#sdb_region
         if (region == null || region.equals("us-east-1")) {
@@ -311,7 +317,7 @@ public class AWSClient implements CloudClient {
         }
         return client;
     }
-
+    
     /**
      * Describe auto scaling groups.
      *
@@ -390,7 +396,22 @@ public class AWSClient implements CloudClient {
         LOGGER.info(String.format("Got attributes for ELB with name '%s' in region %s.", name, region));
         return attrs;
     }
-    
+
+    /**
+     * Retreive the tags for a specific ELB.
+     *
+     * @param name the ELB names
+     * @return the ELBs
+     */
+    public List<TagDescription> describeElasticLoadBalancerTags(String name) {
+        LOGGER.info(String.format("Getting tags for ELB with name '%s' in region %s.", name, region));
+        AmazonElasticLoadBalancingClient elbClient = elbClient();
+        DescribeTagsRequest request = new DescribeTagsRequest().withLoadBalancerNames(name);
+        DescribeTagsResult result = elbClient.describeTags(request);
+        LOGGER.info(String.format("Got tags for ELB with name '%s' in region %s.", name, region));
+        return result.getTagDescriptions();
+    }
+
     /**
      * Describe a set of specific auto-scaling instances.
      *
@@ -493,8 +514,13 @@ public class AWSClient implements CloudClient {
         LOGGER.info(String.format("Deleting auto-scaling group with name %s in region %s.", asgName, region));
         AmazonAutoScalingClient asgClient = asgClient();
         DeleteAutoScalingGroupRequest request = new DeleteAutoScalingGroupRequest()
-        .withAutoScalingGroupName(asgName);
-        asgClient.deleteAutoScalingGroup(request);
+        .withAutoScalingGroupName(asgName).withForceDelete(true);
+        try {
+            asgClient.deleteAutoScalingGroup(request);
+            LOGGER.info(String.format("Deleted auto-scaling group with name %s in region %s.", asgName, region));
+        }catch(Exception e) {
+            LOGGER.error("Got an exception deleting ASG " + asgName, e);
+        }
     }
 
     /** {@inheritDoc} */
@@ -538,6 +564,49 @@ public class AWSClient implements CloudClient {
         AmazonEC2 ec2Client = ec2Client();
         DeleteSnapshotRequest request = new DeleteSnapshotRequest().withSnapshotId(snapshotId);
         ec2Client.deleteSnapshot(request);
+    }
+
+    /** {@inheritDoc} */
+    @Override
+    public void deleteElasticLoadBalancer(String elbId) {
+        Validate.notEmpty(elbId);
+        LOGGER.info(String.format("Deleting ELB %s in region %s.", elbId, region));
+        AmazonElasticLoadBalancingClient elbClient = elbClient();
+        DeleteLoadBalancerRequest request = new DeleteLoadBalancerRequest(elbId);
+        elbClient.deleteLoadBalancer(request);
+    }
+
+    /** {@inheritDoc} */
+    @Override
+    public void deleteDNSRecord(String dnsName, String dnsType, String hostedZoneID) {
+        Validate.notEmpty(dnsName);
+        Validate.notEmpty(dnsType);
+
+        if(dnsType.equals("A") || dnsType.equals("AAAA") || dnsType.equals("CNAME")) {
+            LOGGER.info(String.format("Deleting DNS Route 53 record %s", dnsName));
+            AmazonRoute53Client route53Client = route53Client();
+
+            // AWS API requires us to query for the record first
+            ListResourceRecordSetsRequest listRequest = new ListResourceRecordSetsRequest(hostedZoneID);
+            listRequest.setMaxItems("1");
+            listRequest.setStartRecordType(dnsType);
+            listRequest.setStartRecordName(dnsName);
+            ListResourceRecordSetsResult listResult = route53Client.listResourceRecordSets(listRequest);
+            if (listResult.getResourceRecordSets().size() < 1) {
+                throw new NotFoundException("Could not find Route53 record for " + dnsName + " (" + dnsType + ") in zone " + hostedZoneID);
+            } else {
+                ResourceRecordSet resourceRecord = listResult.getResourceRecordSets().get(0);
+                ArrayList<Change> changeList = new ArrayList<>();
+                Change recordChange = new Change(ChangeAction.DELETE, resourceRecord);
+                changeList.add(recordChange);
+                ChangeBatch recordChangeBatch = new ChangeBatch(changeList);
+
+                ChangeResourceRecordSetsRequest request = new ChangeResourceRecordSetsRequest(hostedZoneID, recordChangeBatch);
+                ChangeResourceRecordSetsResult result = route53Client.changeResourceRecordSets(request);
+            }
+        } else {
+            LOGGER.error("dnsType must be one of 'A', 'AAAA', or 'CNAME'");
+        }
     }
 
     /** {@inheritDoc} */

@@ -1,3 +1,20 @@
+/*
+ *
+ *  Copyright 2012 Netflix, Inc.
+ *
+ *     Licensed under the Apache License, Version 2.0 (the "License");
+ *     you may not use this file except in compliance with the License.
+ *     You may obtain a copy of the License at
+ *
+ *         http://www.apache.org/licenses/LICENSE-2.0
+ *
+ *     Unless required by applicable law or agreed to in writing, software
+ *     distributed under the License is distributed on an "AS IS" BASIS,
+ *     WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ *     See the License for the specific language governing permissions and
+ *     limitations under the License.
+ *
+ */
 package com.netflix.simianarmy.client;
 
 import org.apache.commons.lang.Validate;
@@ -34,7 +51,7 @@ public abstract class MonkeyRestClient {
         Validate.isTrue(timeout >= 0);
         Validate.isTrue(maxRetries >= 0);
         Validate.isTrue(retryInterval > 0);
-        
+
         RequestConfig config = RequestConfig.custom()
             .setConnectTimeout(timeout)
             .build();
@@ -70,7 +87,7 @@ public abstract class MonkeyRestClient {
         if (code == 404) {
             return null;
         } else if (code >= 300 || code < 200) {
-            throw new RuntimeException(String.format("Response code %d from url %s: %s", code, url, jsonContent));
+            throw new DataReadException(code, url, jsonContent);
         }
 
         JsonNode result;
@@ -90,4 +107,10 @@ public abstract class MonkeyRestClient {
      * @return the base url in the region
      */
     public abstract String getBaseUrl(String region);
+
+    public static class DataReadException extends RuntimeException {
+        public DataReadException(int code, String url, String jsonContent) {
+            super(String.format("Response code %d from url %s: %s", code, url, jsonContent));
+        }
+    }
 }

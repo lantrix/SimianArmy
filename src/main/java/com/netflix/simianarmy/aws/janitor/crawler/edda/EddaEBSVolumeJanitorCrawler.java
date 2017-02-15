@@ -1,3 +1,20 @@
+/*
+ *
+ *  Copyright 2012 Netflix, Inc.
+ *
+ *     Licensed under the Apache License, Version 2.0 (the "License");
+ *     you may not use this file except in compliance with the License.
+ *     You may obtain a copy of the License at
+ *
+ *         http://www.apache.org/licenses/LICENSE-2.0
+ *
+ *     Unless required by applicable law or agreed to in writing, software
+ *     distributed under the License is distributed on an "AS IS" BASIS,
+ *     WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ *     See the License for the specific language governing permissions and
+ *     limitations under the License.
+ *
+ */
 package com.netflix.simianarmy.aws.janitor.crawler.edda;
 
 import com.google.common.collect.Lists;
@@ -7,6 +24,7 @@ import com.netflix.simianarmy.Resource;
 import com.netflix.simianarmy.ResourceType;
 import com.netflix.simianarmy.aws.AWSResource;
 import com.netflix.simianarmy.aws.AWSResourceType;
+import com.netflix.simianarmy.basic.BasicSimianArmyContext;
 import com.netflix.simianarmy.client.edda.EddaClient;
 import com.netflix.simianarmy.janitor.JanitorCrawler;
 import com.netflix.simianarmy.janitor.JanitorMonkey;
@@ -78,9 +96,9 @@ public class EddaEBSVolumeJanitorCrawler implements JanitorCrawler {
         LOGGER.info(String.format("Getting owners for all instances in region %s", region));
 
         long startTime = DateTime.now().minusDays(LOOKBACK_DAYS).getMillis();
-        String url = String.format("%s/view/instances;_since=%d;state.name=running;tags.key=owner;"
+        String url = String.format("%1$s/view/instances;_since=%2$d;state.name=running;tags.key=%3$s;"
                 + "_expand:(instanceId,tags:(key,value))",
-                eddaClient.getBaseUrl(region), startTime);
+                eddaClient.getBaseUrl(region), startTime, BasicSimianArmyContext.GLOBAL_OWNER_TAGKEY);
         JsonNode jsonNode = null;
         try {
             jsonNode = eddaClient.getJsonNodeFromUrl(url);
@@ -103,7 +121,7 @@ public class EddaEBSVolumeJanitorCrawler implements JanitorCrawler {
             for (Iterator<JsonNode> tagsIt = tags.getElements(); tagsIt.hasNext();) {
                 JsonNode tag = tagsIt.next();
                 String tagKey = tag.get("key").getTextValue();
-                if ("owner".equals(tagKey)) {
+                if (BasicSimianArmyContext.GLOBAL_OWNER_TAGKEY.equals(tagKey)) {
                     instanceToOwner.put(instanceId, tag.get("value").getTextValue());
                     break;
                 }
@@ -131,7 +149,8 @@ public class EddaEBSVolumeJanitorCrawler implements JanitorCrawler {
 
     @Override
     public String getOwnerEmailForResource(Resource resource) {
-        return null;
+        Validate.notNull(resource);
+        return resource.getTag(BasicSimianArmyContext.GLOBAL_OWNER_TAGKEY);
     }
 
     private List<Resource> getVolumeResources(String... volumeIds) {
@@ -147,7 +166,7 @@ public class EddaEBSVolumeJanitorCrawler implements JanitorCrawler {
      * Gets all volumes that are not attached to any instance. Janitor Monkey only considers unattached volumes
      * as cleanup candidates, so there is no need to get volumes that are in-use.
      * @param region
-     * @return
+     * @return list of resources that are not attached to any instance
      */
     private List<Resource> getUnattachedVolumeResourcesInRegion(String region, String... volumeIds) {
         String url = eddaClient.getBaseUrl(region) + "/aws/volumes;";
@@ -316,7 +335,7 @@ public class EddaEBSVolumeJanitorCrawler implements JanitorCrawler {
         StringBuilder meta = new StringBuilder();
         meta.append(String.format("%s=%s;",
                 JanitorMonkey.INSTANCE_TAG_KEY, instance == null ? "" : instance));
-        meta.append(String.format("%s=%s;", JanitorMonkey.OWNER_TAG_KEY, owner == null ? "" : owner));
+        meta.append(String.format("%s=%s;", BasicSimianArmyContext.GLOBAL_OWNER_TAGKEY, owner == null ? "" : owner));
         meta.append(String.format("%s=%s", JanitorMonkey.DETACH_TIME_TAG_KEY,
                 lastDetachTime == null ? "" : AWSResource.DATE_FORMATTER.print(lastDetachTime)));
         return meta.toString();

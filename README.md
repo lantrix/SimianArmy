@@ -3,8 +3,12 @@
 The Simian Army is a suite of tools for keeping your cloud operating in top form.  Chaos Monkey, the first member, is a resiliency tool that
 helps ensure that your applications can tolerate random instance failures
 
-## CloudBees build status
-[![Build Status](https://netflixoss.ci.cloudbees.com/job/SimianArmy-master/badge/icon)](https://netflixoss.ci.cloudbees.com/job/SimianArmy-master/)
+A [newer version of Chaos Monkey](https://github.com/netflix/chaosmonkey) is available as a standalone service.
+
+## Build status
+
+[![Build Status](https://travis-ci.org/Netflix/SimianArmy.svg?branch=master)](https://travis-ci.org/Netflix/SimianArmy)
+[![License](https://img.shields.io/badge/License-Apache%202.0-blue.svg)](https://opensource.org/licenses/Apache-2.0)
 
 ## DETAILS
 
@@ -16,7 +20,7 @@ Please see the [wiki](https://github.com/Netflix/SimianArmy/wiki).
 
 ## LICENSE
 
-Copyright 2012 Netflix, Inc.
+Copyright 2012-2016 Netflix, Inc.
 
 Licensed under the Apache License, Version 2.0 (the “License”); you may not use this file except in
 compliance with the License. You may obtain a copy of the License at

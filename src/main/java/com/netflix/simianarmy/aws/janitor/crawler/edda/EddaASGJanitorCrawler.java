@@ -24,6 +24,7 @@ import com.netflix.simianarmy.Resource;
 import com.netflix.simianarmy.ResourceType;
 import com.netflix.simianarmy.aws.AWSResource;
 import com.netflix.simianarmy.aws.AWSResourceType;
+import com.netflix.simianarmy.basic.BasicSimianArmyContext;
 import com.netflix.simianarmy.client.edda.EddaClient;
 import com.netflix.simianarmy.janitor.JanitorCrawler;
 
@@ -118,7 +119,8 @@ public class EddaASGJanitorCrawler implements JanitorCrawler {
 
     @Override
     public String getOwnerEmailForResource(Resource resource) {
-        return null;
+        Validate.notNull(resource);
+        return resource.getTag(BasicSimianArmyContext.GLOBAL_OWNER_TAGKEY);
     }
 
     private List<Resource> getASGResources(String... asgNames) {
@@ -211,7 +213,9 @@ public class EddaASGJanitorCrawler implements JanitorCrawler {
         if (lc != null) {
             String lcName = lc.getTextValue();
             Long lcCreationTime = lcNameToCreationTime.get(lcName);
-            resource.setAdditionalField(ASG_FIELD_LC_NAME, lcName);
+            if (lcName != null) {
+                resource.setAdditionalField(ASG_FIELD_LC_NAME, lcName);
+            }
             if (lcCreationTime != null) {
                 resource.setAdditionalField(ASG_FIELD_LC_CREATION_TIME, String.valueOf(lcCreationTime));
             }

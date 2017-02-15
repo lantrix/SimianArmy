@@ -25,6 +25,7 @@ import com.netflix.simianarmy.Resource;
 import com.netflix.simianarmy.ResourceType;
 import com.netflix.simianarmy.aws.AWSResource;
 import com.netflix.simianarmy.aws.AWSResourceType;
+import com.netflix.simianarmy.basic.BasicSimianArmyContext;
 import com.netflix.simianarmy.client.edda.EddaClient;
 import com.netflix.simianarmy.janitor.JanitorCrawler;
 
@@ -73,7 +74,7 @@ public class EddaImageJanitorCrawler implements JanitorCrawler {
     private final Set<String> usedByInstance = Sets.newHashSet();
     private final Set<String> usedByLaunchConfig = Sets.newHashSet();
     private final Set<String> usedNames = Sets.newHashSet();
-    private final Map<String, String> imageIdToName = Maps.newHashMap();
+    protected final Map<String, String> imageIdToName = Maps.newHashMap();
     private final Map<String, Long> imageIdToCreationTime = Maps.newHashMap();
     private final Set<String> ancestorImageIds = Sets.newHashSet();
 
@@ -125,7 +126,8 @@ public class EddaImageJanitorCrawler implements JanitorCrawler {
 
     @Override
     public String getOwnerEmailForResource(Resource resource) {
-        return resource.getTag("creator");
+        Validate.notNull(resource);
+        return resource.getTag(BasicSimianArmyContext.GLOBAL_OWNER_TAGKEY);
     }
 
     private List<Resource> getAMIResources(String... imageIds) {

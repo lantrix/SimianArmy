@@ -1,5 +1,3 @@
-// CHECKSTYLE IGNORE Javadoc
-// CHECKSTYLE IGNORE MagicNumberCheck
 /*
  *
  *  Copyright 2012 Netflix, Inc.
@@ -17,6 +15,8 @@
  *     limitations under the License.
  *
  */
+// CHECKSTYLE IGNORE Javadoc
+// CHECKSTYLE IGNORE MagicNumberCheck
 package com.netflix.simianarmy.aws.janitor.rule;
 
 import java.util.Calendar;

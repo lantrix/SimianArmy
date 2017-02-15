@@ -24,6 +24,8 @@ import java.util.TimeZone;
 import java.util.TreeSet;
 
 import org.apache.commons.lang.Validate;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 import com.netflix.simianarmy.Monkey;
 import com.netflix.simianarmy.MonkeyCalendar;
@@ -35,6 +37,9 @@ import com.netflix.simianarmy.MonkeyConfiguration;
  */
 public class BasicCalendar implements MonkeyCalendar {
 
+    /** The Constant LOGGER. */
+    private static final Logger LOGGER = LoggerFactory.getLogger(BasicCalendar.class);
+
     /** The open hour. */
     private final int openHour;
 
@@ -45,7 +50,7 @@ public class BasicCalendar implements MonkeyCalendar {
     private final TimeZone tz;
 
     /** The holidays. */
-    private final Set<Integer> holidays = new TreeSet<Integer>();
+    protected final Set<Integer> holidays = new TreeSet<Integer>();
 
     /** The cfg. */
     private MonkeyConfiguration cfg;
@@ -79,6 +84,23 @@ public class BasicCalendar implements MonkeyCalendar {
         tz = timezone;
     }
 
+    /**
+     * Instantiates a new basic calendar.
+     *
+     * @param open
+     *            the open hour
+     * @param close
+     *            the close hour
+     * @param timezone
+     *            the timezone
+     */
+    public BasicCalendar(MonkeyConfiguration cfg, int open, int close, TimeZone timezone) {
+        this.cfg = cfg;
+        openHour = open;
+        closeHour = close;
+        tz = timezone;
+    }
+
     /** {@inheritDoc} */
     @Override
     public int openHour() {
@@ -100,25 +122,35 @@ public class BasicCalendar implements MonkeyCalendar {
     /** {@inheritDoc} */
     @Override
     public boolean isMonkeyTime(Monkey monkey) {
-        if (cfg != null && cfg.getStrOrElse("simianarmy.calendar.isMonkeyTime", null) != null) {
-            return cfg.getBool("simianarmy.calendar.isMonkeyTime");
+        if (cfg != null && cfg.getStr("simianarmy.calendar.isMonkeyTime") != null) {
+        	boolean monkeyTime = cfg.getBool("simianarmy.calendar.isMonkeyTime");
+        	if (monkeyTime) {
+        		LOGGER.debug("isMonkeyTime: Found property 'simianarmy.calendar.isMonkeyTime': " + monkeyTime + ". Time for monkey.");
+        		return monkeyTime;
+        	} else {
+        		LOGGER.debug("isMonkeyTime: Found property 'simianarmy.calendar.isMonkeyTime': " + monkeyTime + ". Continuing regular calendar check for monkey time.");
+        	}
         }
 
         Calendar now = now();
         int dow = now.get(Calendar.DAY_OF_WEEK);
         if (dow == Calendar.SATURDAY || dow == Calendar.SUNDAY) {
+        	LOGGER.debug("isMonkeyTime: Happy Weekend! Not time for monkey.");
             return false;
         }
 
         int hour = now.get(Calendar.HOUR_OF_DAY);
         if (hour < openHour || hour > closeHour) {
+        	LOGGER.debug("isMonkeyTime: Not inside open hours. Not time for monkey.");
             return false;
         }
 
         if (isHoliday(now)) {
+        	LOGGER.debug("isMonkeyTime: Happy Holiday! Not time for monkey.");
             return false;
         }
 
+    	LOGGER.debug("isMonkeyTime: Time for monkey.");
         return true;
     }
 
@@ -203,7 +235,7 @@ public class BasicCalendar implements MonkeyCalendar {
      *            the day
      * @return the day of the year
      */
-    private int dayOfYear(int year, int month, int day) {
+    protected int dayOfYear(int year, int month, int day) {
         Calendar holiday = now();
         holiday.set(Calendar.YEAR, year);
         holiday.set(Calendar.MONTH, month);
@@ -224,7 +256,7 @@ public class BasicCalendar implements MonkeyCalendar {
      *            the week in month
      * @return the day of the year
      */
-    private int dayOfYear(int year, int month, int dayOfWeek, int weekInMonth) {
+    protected int dayOfYear(int year, int month, int dayOfWeek, int weekInMonth) {
         Calendar holiday = now();
         holiday.set(Calendar.YEAR, year);
         holiday.set(Calendar.MONTH, month);
@@ -244,7 +276,7 @@ public class BasicCalendar implements MonkeyCalendar {
      *            the day
      * @return the day of the year adjusted to the closest workday
      */
-    private int workDayInYear(int year, int month, int day) {
+    protected int workDayInYear(int year, int month, int day) {
         Calendar holiday = now();
         holiday.set(Calendar.YEAR, year);
         holiday.set(Calendar.MONTH, month);
@@ -276,8 +308,7 @@ public class BasicCalendar implements MonkeyCalendar {
 
     private boolean isWeekend(Calendar calendar) {
         int dow = calendar.get(Calendar.DAY_OF_WEEK);
-        return dow == Calendar.SATURDAY
-                || dow == Calendar.SUNDAY;
+        return dow == Calendar.SATURDAY || dow == Calendar.SUNDAY;
     }
 
 }

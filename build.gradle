@@ -1,6 +1,13 @@
+buildscript {
+    repositories {
+        jcenter()
+    }
+}
+
 plugins {
-    id 'nebula.netflixoss' version '2.2.9'
+    id 'nebula.netflixoss' version '3.2.3'
     id 'net.saliman.cobertura' version '2.2.7'
+    id 'com.github.hierynomus.license' version '0.11.0'
 }
 
 // Establish version and status
@@ -8,13 +15,16 @@ ext.githubProjectName = 'SimianArmy'
 group = "com.netflix.${project.name}"
 apply plugin:'eclipse-wtp'
 
-repositories { 
+repositories {
     mavenLocal()
     mavenCentral()
 }
 
 apply plugin: 'war'
 apply plugin: 'jetty'
+
+sourceCompatibility = 1.7
+targetCompatibility = 1.7
 
 dependencies {
     // for the VMWareClient
@@ -23,15 +33,12 @@ dependencies {
     // for DB support outside of AWS (SimpleDB not available)
     compile 'org.mapdb:mapdb:0.9.5'
 
-    compile 'com.sun.jersey:jersey-core:1.11'
-    compile 'com.sun.jersey:jersey-servlet:1.11'
+    compile 'com.sun.jersey:jersey-servlet:1.19'
     compile 'org.slf4j:slf4j-api:1.7.2'
     compile 'org.codehaus.jackson:jackson-core-asl:1.9.2'
     compile 'org.codehaus.jackson:jackson-mapper-asl:1.9.2'
-    compile('com.netflix.eureka:eureka-client:1.1.22') {
-        exclude group: 'com.sun.jersey', module: 'jersey-bundle'
-    }
-    compile 'com.amazonaws:aws-java-sdk:1.10.5.1'
+    compile 'com.netflix.eureka:eureka-client:1.4.1'
+    compile 'com.amazonaws:aws-java-sdk:1.11.28'
     compile 'commons-lang:commons-lang:2.6'
     compile 'com.google.guava:guava:11.0.2'
     compile 'org.apache.httpcomponents:httpclient:4.3'
@@ -40,8 +47,9 @@ dependencies {
     compile 'org.apache.jclouds.driver:jclouds-slf4j:1.9.0'
     compile 'org.apache.jclouds.api:ec2:1.9.0'
     compile 'org.apache.jclouds.provider:aws-ec2:1.9.0'
-    compile 'ch.qos.logback:logback-classic:1.0.13'
-
+    compile 'com.netflix.servo:servo-core:0.12.11'
+    compile 'org.springframework:spring-jdbc:4.2.5.RELEASE'
+    compile 'com.zaxxer:HikariCP:2.4.7'
 
     testCompile 'org.testng:testng:6.3.1'
     testCompile 'org.mockito:mockito-core:1.8.5'
@@ -59,11 +67,26 @@ tasks.withType(JavaCompile) {
     options.compilerArgs << "-Xlint"
 }
 
-artifacts {
-    archives tasks.jar
+license {
+    exclude '**/*.properties'
+    exclude '**/*.json'
+    exclude '**/*.sh'
 }
-import nl.javadude.gradle.plugins.license.License
-tasks.withType(License).each { licenseTask ->
-    licenseTask.exclude '**/*.json'
-    licenseTask.exclude '**/*.properties'
+
+task coreJar(type: Jar) {
+    from sourceSets.main.output
+    include '**'
+}
+
+publishing {
+    publications {
+        mavenWar(MavenPublication) {
+            from components.web
+            artifact coreJar { classifier "core" }
+        }
+    }
+}
+
+artifactoryPublish {
+    publications('mavenWar')
 }

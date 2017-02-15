@@ -19,6 +19,9 @@
 package com.netflix.simianarmy.janitor;
 
 import com.google.common.collect.Maps;
+import com.netflix.servo.annotations.DataSourceType;
+import com.netflix.servo.annotations.Monitor;
+import com.netflix.servo.annotations.MonitorTags;
 import com.netflix.simianarmy.MonkeyCalendar;
 import com.netflix.simianarmy.MonkeyConfiguration;
 import com.netflix.simianarmy.MonkeyRecorder;
@@ -41,6 +44,11 @@ import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
+import java.util.concurrent.atomic.AtomicLong;
+
+import com.netflix.servo.monitor.Monitors;
+import com.netflix.servo.tag.BasicTagList;
+import com.netflix.servo.tag.TagList;
 
 /**
  * An abstract implementation of Janitor. It marks resources that the rule engine considers
@@ -54,6 +62,10 @@ public abstract class AbstractJanitor implements Janitor {
 
     /** The Constant LOGGER. */
     private static final Logger LOGGER = LoggerFactory.getLogger(AbstractJanitor.class);
+
+    /** Tags to attach to servo metrics */
+    @MonitorTags
+    protected TagList tags;
 
     private final String region;
     /** The region the janitor is running in. */
@@ -94,6 +106,9 @@ public abstract class AbstractJanitor implements Janitor {
     private boolean leashed;
 
     private final MonkeyRecorder recorder;
+
+    /** The number of resources that have been checked on this run. */
+    private int checkedResourcesCount;
 
     /**
      * Sets the flag to indicate if the janitor is leashed.
@@ -183,11 +198,40 @@ public abstract class AbstractJanitor implements Janitor {
         Validate.notNull(resourceType);
         // recorder could be null and no events are recorded when it is.
         this.recorder = ctx.recorder();
+
+        // setup servo tags, currently just tag each published metric with the region
+        this.tags = BasicTagList.of("simianarmy.janitor.region", ctx.region());
+
+        // register this janitor with servo
+        String monitorObjName = String.format("simianarmy.janitor.%s.%s", this.resourceType.name(), this.region);
+        Monitors.registerObject(monitorObjName, this);
     }
 
     @Override
     public ResourceType getResourceType() {
         return resourceType;
+    }
+
+    /**
+     * Clears this object's internal resource lists in preparation for a new
+     * run.
+     *
+     * This is an optional method as regular Janitor processing will
+     * automatically clear resource lists as it runs.
+     *
+     * This method offers an explicit clear so that the resources will be
+     * consistent across the run.  For example, when starting a run after a
+     * previous run has finished, cleanedResources will be holding the cleaned
+     * resources from the prior run until cleanupResources() is called.  By
+     * calling prepareToRun() first, the resource lists will be consistent
+     * for the entire run.
+     */
+    public void prepareToRun() {
+        markedResources.clear();
+        unmarkedResources.clear();
+        checkedResourcesCount = 0;
+        cleanedResources.clear();
+        failedToCleanResources.clear();
     }
 
     /**
@@ -198,6 +242,7 @@ public abstract class AbstractJanitor implements Janitor {
     public void markResources() {
         markedResources.clear();
         unmarkedResources.clear();
+        checkedResourcesCount = 0;
         Map<String, Resource> trackedMarkedResources = getTrackedMarkedResources();
 
         List<Resource> crawledResources = crawler.resources(resourceType);
@@ -205,6 +250,7 @@ public abstract class AbstractJanitor implements Janitor {
                 crawledResources.size()));
         Date now = calendar.now().getTime();
         for (Resource resource : crawledResources) {
+        	checkedResourcesCount++;
             Resource trackedResource = trackedMarkedResources.get(resource.getId());
             if (!ruleEngine.isValid(resource)) {
                 // If the resource is already marked, ignore it
@@ -217,11 +263,12 @@ public abstract class AbstractJanitor implements Janitor {
                 resource.setState(CleanupState.MARKED);
                 resource.setMarkTime(now);
                 if (!leashed) {
+                    resourceTracker.addOrUpdate(resource);
                     if (recorder != null) {
                         Event evt = recorder.newEvent(Type.JANITOR, EventTypes.MARK_RESOURCE, region, resource.getId());
+                        addFieldsAndTagsToEvent(resource, evt);
                         recorder.recordEvent(evt);
                     }
-                    resourceTracker.addOrUpdate(resource);
                     postMark(resource);
                 } else {
                     LOGGER.info(String.format(
@@ -235,12 +282,13 @@ public abstract class AbstractJanitor implements Janitor {
                 LOGGER.info(String.format("Unmarking resource %s", resource.getId()));
                 resource.setState(CleanupState.UNMARKED);
                 if (!leashed) {
+                    resourceTracker.addOrUpdate(resource);
                     if (recorder != null) {
                         Event evt = recorder.newEvent(
                                 Type.JANITOR, EventTypes.UNMARK_RESOURCE, region, resource.getId());
+                        addFieldsAndTagsToEvent(resource, evt);
                         recorder.recordEvent(evt);
                     }
-                    resourceTracker.addOrUpdate(resource);
                 } else {
                     LOGGER.info(String.format(
                             "The janitor is leashed, no data change is made for unmarking the resource %s.",
@@ -285,18 +333,19 @@ public abstract class AbstractJanitor implements Janitor {
                         markedResource.getId(), markedResource.getResourceType().name()));
                 if (!leashed) {
                     try {
-                        if (recorder != null) {
-                            Event evt = recorder.newEvent(Type.JANITOR, EventTypes.CLEANUP_RESOURCE, region,
-                                    markedResource.getId());
-                            recorder.recordEvent(evt);
-                        }
                         cleanup(markedResource);
                         markedResource.setActualTerminationTime(now);
                         markedResource.setState(Resource.CleanupState.JANITOR_TERMINATED);
                         resourceTracker.addOrUpdate(markedResource);
+                        if (recorder != null) {
+                            Event evt = recorder.newEvent(Type.JANITOR, EventTypes.CLEANUP_RESOURCE, region,
+                                    markedResource.getId());
+                            addFieldsAndTagsToEvent(markedResource, evt);
+                            recorder.recordEvent(evt);
+                        }
                     } catch (Exception e) {
-                        LOGGER.error(String.format("Failed to clean up the resource %s.",
-                                markedResource.getId()), e);
+                        LOGGER.error(String.format("Failed to clean up the resource %s of type %s.",
+                                markedResource.getId(), markedResource.getResourceType().name()), e);
                         failedToCleanResources.add(markedResource);
                         continue;
                     }
@@ -311,7 +360,23 @@ public abstract class AbstractJanitor implements Janitor {
         }
     }
 
-    /** Determines if the input resource can be cleaned. The Janitor calls this method
+	/**
+	 * Adds selected resource fields and all the tags from the given resource as additional fields on the event.
+	 * @param resource the resource with the the source data
+	 * @param event    the event that will hold the source data as additional fields
+     */
+    private void addFieldsAndTagsToEvent(Resource resource, Event event) {
+    	if (resource == null) return;
+    	if (resource.getAllTagKeys() != null) {
+	    	for(String key : resource.getAllTagKeys()) {
+	    		event.addField(key, resource.getTag(key));
+	    	}
+    	}
+    	event.addField("ResourceDescription", resource.getDescription());
+    	event.addField("ResourceType", resource.getResourceType().toString());
+	}
+
+	/** Determines if the input resource can be cleaned. The Janitor calls this method
      * before cleaning up a resource and only cleans the resource when the method returns
      * true. A resource is considered to be OK to clean if
      * 1) it is marked as cleanup candidates
@@ -395,4 +460,30 @@ public abstract class AbstractJanitor implements Janitor {
             }
         }
     }
+
+    @Monitor(name="cleanedResourcesCount", type=DataSourceType.GAUGE)
+    public int getResourcesCleanedCount() {
+      return cleanedResources.size();
+    }
+
+    @Monitor(name="markedResourcesCount", type=DataSourceType.GAUGE)
+    public int getMarkedResourcesCount() {
+      return markedResources.size();
+    }
+
+    @Monitor(name="failedToCleanResourcesCount", type=DataSourceType.GAUGE)
+    public int getFailedToCleanResourcesCount() {
+      return failedToCleanResources.size();
+    }
+
+    @Monitor(name="unmarkedResourcesCount", type=DataSourceType.GAUGE)
+    public int getUnmarkedResourcesCount() {
+      return unmarkedResources.size();
+    }
+
+    @Monitor(name="checkedResourcesCount", type=DataSourceType.GAUGE)
+    public int getCheckedResourcesCount() {
+      return checkedResourcesCount;
+    }
+
 }

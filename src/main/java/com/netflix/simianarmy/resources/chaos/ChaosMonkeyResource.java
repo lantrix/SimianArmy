@@ -28,7 +28,9 @@ import java.util.Map;
 import javax.ws.rs.GET;
 import javax.ws.rs.POST;
 import javax.ws.rs.Path;
+import javax.ws.rs.Produces;
 import javax.ws.rs.core.Context;
+import javax.ws.rs.core.MediaType;
 import javax.ws.rs.core.Response;
 import javax.ws.rs.core.UriInfo;
 
@@ -58,6 +60,7 @@ import com.netflix.simianarmy.chaos.ShutdownInstanceChaosType;
  * The Class ChaosMonkeyResource for json REST apis.
  */
 @Path("/v1/chaos")
+@Produces(MediaType.APPLICATION_JSON)
 @Singleton
 public class ChaosMonkeyResource {
 
@@ -98,8 +101,8 @@ public class ChaosMonkeyResource {
 
     /**
      * Gets the chaos events. Creates GET /api/v1/chaos api which outputs the chaos events in json. Users can specify
-     * cgi query params to filter the results and use "since" query param to set the start of a timerange. "since" will
-     * number of milliseconds since the epoch.
+     * cgi query params to filter the results and use "since" query param to set the start of a timerange. "since" should
+     * be specified in milliseconds since the epoch.
      *
      * @param uriInfo
      *            the uri info
@@ -137,6 +140,7 @@ public class ChaosMonkeyResource {
         for (Event evt : evts) {
             gen.writeStartObject();
             gen.writeStringField("monkeyType", evt.monkeyType().name());
+            gen.writeStringField("eventId", evt.id());
             gen.writeStringField("eventType", evt.eventType().name());
             gen.writeNumberField("eventTime", evt.eventTime().getTime());
             gen.writeStringField("region", evt.region());
